@@ -21,7 +21,6 @@ module.exports = [
             'prefer-const': 'warn',
             'no-var': 'warn',
             eqeqeq: ['error', 'always'],
-            'no-fallthrough': 'error',
         },
     },
     {
