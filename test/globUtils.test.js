@@ -29,7 +29,7 @@ Module._load = originalLoad;
 
 QUnit.module('globUtils.addGlobs');
 
-QUnit.test('adds included globs', function (assert) {
+QUnit.test('extracts enabled globs from source object', function (assert) {
     const source = { '*.js': true, '*.ts': true, '*.md': false };
     const result = addGlobs(source, [], false);
     assert.deepEqual(result, ['*.js', '*.ts']);
@@ -47,7 +47,7 @@ QUnit.test('appends to existing target', function (assert) {
     assert.deepEqual(result, ['*.ts', '*.js']);
 });
 
-QUnit.test('handles empty source', function (assert) {
+QUnit.test('returns empty array when source has no entries', function (assert) {
     const result = addGlobs({}, [], false);
     assert.deepEqual(result, []);
 });
