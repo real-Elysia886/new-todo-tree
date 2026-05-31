@@ -19,4 +19,26 @@ describe('parseDiffForTodos', () => {
         expect(items).toHaveLength(1);
         expect(items[0].text).toBe('// TODO real');
     });
+
+    it('attributes removed TODOs from deleted files to the deleted path', () => {
+        const diff = [
+            'diff --git a/src/keep.ts b/src/keep.ts',
+            '--- a/src/keep.ts',
+            '+++ b/src/keep.ts',
+            '@@ -1,0 +1,1 @@',
+            '+// TODO new',
+            'diff --git a/src/deleted.ts b/src/deleted.ts',
+            'deleted file mode 100644',
+            '--- a/src/deleted.ts',
+            '+++ /dev/null',
+            '@@ -1,1 +0,0 @@',
+            '-// TODO old',
+        ].join('\n');
+
+        const items = parseDiffForTodos(diff, ['TODO']);
+        expect(items).toMatchObject([
+            { file: 'src/keep.ts', status: 'added', text: '// TODO new' },
+            { file: 'src/deleted.ts', status: 'removed', text: '// TODO old' },
+        ]);
+    });
 });

@@ -27,6 +27,7 @@ interface TrendPoint {
 interface DashboardPanelLike {
     webview: {
         html: string;
+        cspSource?: string;
     };
 }
 
@@ -37,7 +38,7 @@ export function show(context: vscode.ExtensionContext, provider: CountProvider, 
 
     if (panel) {
         panel.reveal();
-        panel.webview.html = html(context, provider);
+        panel.webview.html = html(context, provider, panel.webview);
         return;
     }
 
@@ -46,7 +47,7 @@ export function show(context: vscode.ExtensionContext, provider: CountProvider, 
         retainContextWhenHidden: true,
     });
 
-    panel.webview.html = html(context, provider);
+    panel.webview.html = html(context, provider, panel.webview);
 
     panel.webview.onDidReceiveMessage((message: DashboardMessage) => {
         handleMessage(message, context, actions);
@@ -59,7 +60,7 @@ export function show(context: vscode.ExtensionContext, provider: CountProvider, 
 
 export function refresh(context: vscode.ExtensionContext, provider: CountProvider): void {
     if (panel) {
-        panel.webview.html = html(context, provider);
+        panel.webview.html = html(context, provider, panel.webview);
     }
 }
 
@@ -98,7 +99,7 @@ function handleMessage(message: DashboardMessage, context: vscode.ExtensionConte
     }, 300);
 }
 
-function html(context: vscode.ExtensionContext, provider: CountProvider): string {
+function html(context: vscode.ExtensionContext, provider: CountProvider, webview?: { cspSource?: string }): string {
     void context;
 
     const scanner = vscode.workspace.getConfiguration('todo-tree.scanner');
@@ -106,6 +107,14 @@ function html(context: vscode.ExtensionContext, provider: CountProvider): string
     const filtering = vscode.workspace.getConfiguration('todo-tree.filtering');
     const counts = provider.getTagCountsForActivityBar();
     const total = Object.values(counts).reduce((a, b) => a + b, 0);
+    const nonce = getNonce();
+    const cspSource = webview && webview.cspSource ? webview.cspSource : '';
+    const csp = [
+        "default-src 'none'",
+        'img-src ' + cspSource + ' data:',
+        'style-src ' + cspSource + " 'unsafe-inline'",
+        "script-src 'nonce-" + nonce + "'",
+    ].join('; ');
     const rows = Object.keys(counts)
         .sort()
         .map((tag) => {
@@ -120,6 +129,9 @@ function html(context: vscode.ExtensionContext, provider: CountProvider): string
         '<!DOCTYPE html>' +
         '<html><head><meta charset="UTF-8">' +
         '<meta name="viewport" content="width=device-width, initial-scale=1.0">' +
+        '<meta http-equiv="Content-Security-Policy" content="' +
+        escapeHtml(csp) +
+        '">' +
         '<style>' +
         'body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);background:var(--vscode-editor-background);margin:0;padding:20px;}' +
         'main{max-width:1040px;margin:0 auto;}' +
@@ -174,12 +186,12 @@ function html(context: vscode.ExtensionContext, provider: CountProvider): string
         '<div><label>Smart filter</label><input id="filter" placeholder="tag:TODO path:src priority:P0"></div>' +
         '</div></section>' +
         '<section>' +
-        '<button onclick="post({command:\'refresh\'})">Refresh</button>' +
-        '<button onclick="post({command:\'changedFiles\'})">Changed Files</button>' +
-        '<button onclick="post({command:\'stagedFiles\'})">Staged Files</button>' +
-        '<button class="secondary" onclick="post({command:\'clearFilter\'})">Clear Filter</button>' +
-        '<button class="secondary" onclick="post({command:\'maxFileSize\',value:document.getElementById(\'maxFileSize\').value})">Save Size</button>' +
-        '<button class="secondary" onclick="post({command:\'filter\',value:document.getElementById(\'filter\').value})">Apply Filter</button>' +
+        '<button data-command="refresh">Refresh</button>' +
+        '<button data-command="changedFiles">Changed Files</button>' +
+        '<button data-command="stagedFiles">Staged Files</button>' +
+        '<button class="secondary" data-command="clearFilter">Clear Filter</button>' +
+        '<button class="secondary" data-command="maxFileSize" data-value-source="maxFileSize">Save Size</button>' +
+        '<button class="secondary" data-command="filter" data-value-source="filter">Apply Filter</button>' +
         '<p class="muted">Include globs: ' +
         escapeHtml(JSON.stringify(filtering.get('includeGlobs', []))) +
         '</p>' +
@@ -190,10 +202,13 @@ function html(context: vscode.ExtensionContext, provider: CountProvider): string
         '<section><h2>Tag Counts</h2><table><thead><tr><th>Tag</th><th>Count</th></tr></thead><tbody>' +
         rows +
         '</tbody></table></section>' +
-        '</main><script>' +
+        '</main><script nonce="' +
+        nonce +
+        '">' +
         'const vscode=acquireVsCodeApi();' +
         'function post(message){vscode.postMessage(message);}' +
         'document.querySelectorAll("select[data-command]").forEach(function(el){el.addEventListener("change",function(){post({command:el.dataset.command,value:el.value});});});' +
+        'document.querySelectorAll("button[data-command]").forEach(function(el){el.addEventListener("click",function(){const source=el.dataset.valueSource;post({command:el.dataset.command,value:source?document.getElementById(source).value:undefined});});});' +
         '</script></body></html>'
     );
 }
@@ -208,7 +223,7 @@ function collectTrendData(context: vscode.ExtensionContext, provider: CountProvi
         'FIXME',
         'BUG',
     ];
-    const grepPattern = tags.join('|');
+    const grepPattern = buildGitGrepPattern(tags);
 
     // Get last 10 commits with dates
     child_process.execFile(
@@ -242,6 +257,23 @@ function collectTrendData(context: vscode.ExtensionContext, provider: CountProvi
             });
         }
     );
+}
+
+function buildGitGrepPattern(tags: string[]): string {
+    return tags.map(escapeRegexTag).join('|');
+}
+
+function escapeRegexTag(tag: string): string {
+    return tag.replace(/[|{}()[\]^$+*?.\\-]/g, '\\$&');
+}
+
+function getNonce(): string {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let nonce = '';
+    for (let i = 0; i < 32; i++) {
+        nonce += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return nonce;
 }
 
 function parseGitLog(stdout: string): Array<{ hash: string; date: string }> {
@@ -531,7 +563,9 @@ function escapeHtml(text: unknown): string {
 }
 
 export const __test = {
+    html,
     parseGitLog,
     countGitGrepOutput,
     completeTrendData,
+    buildGitGrepPattern,
 };

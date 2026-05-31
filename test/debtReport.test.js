@@ -20,13 +20,28 @@ function parseDiffForTodos(diff, tags) {
         return match ? match[2] : undefined;
     }
     let currentFile = '';
+    let oldFile = '';
     let lineNumber = 0;
 
     var lines = diff.split('\n');
     for (var i = 0; i < lines.length; i++) {
         var rawLine = lines[i];
+        if (rawLine.startsWith('diff --git ')) {
+            oldFile = '';
+            currentFile = '';
+            lineNumber = 0;
+            continue;
+        }
+        if (rawLine.startsWith('--- a/')) {
+            oldFile = rawLine.substring(6);
+            continue;
+        }
         if (rawLine.startsWith('+++ b/')) {
             currentFile = rawLine.substring(6);
+            continue;
+        }
+        if (rawLine === '+++ /dev/null') {
+            currentFile = oldFile;
             continue;
         }
         var hunkMatch = rawLine.match(/^@@ -\d+(?:,\d+)? \+(\d+)/);
@@ -106,6 +121,28 @@ QUnit.test('handles multiple files in one diff', function (assert) {
     assert.equal(items[0].tag, 'TODO');
     assert.equal(items[1].file, 'b.ts');
     assert.equal(items[1].tag, 'FIXME');
+});
+
+QUnit.test('attributes removed TODOs from deleted files to the deleted path', function (assert) {
+    var diff = [
+        'diff --git a/src/keep.ts b/src/keep.ts',
+        '--- a/src/keep.ts',
+        '+++ b/src/keep.ts',
+        '@@ -1,0 +1,1 @@',
+        '+// TODO new',
+        'diff --git a/src/deleted.ts b/src/deleted.ts',
+        'deleted file mode 100644',
+        '--- a/src/deleted.ts',
+        '+++ /dev/null',
+        '@@ -1,1 +0,0 @@',
+        '-// TODO old',
+    ].join('\n');
+
+    var items = parseDiffForTodos(diff, ['TODO']);
+    assert.equal(items.length, 2);
+    assert.equal(items[0].file, 'src/keep.ts');
+    assert.equal(items[1].file, 'src/deleted.ts');
+    assert.equal(items[1].status, 'removed');
 });
 
 QUnit.test('ignores lines without tags', function (assert) {

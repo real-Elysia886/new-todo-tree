@@ -15,7 +15,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
-use walker::{read_single_file, readable_text_files, FileWalker};
+use walker::{read_single_file, FileWalker};
 
 fn main() {
     if let Err(error) = run() {
@@ -74,9 +74,12 @@ fn scan_workspace(root: &Path, config: &ScannerConfig) -> Result<ScanOutput> {
     let paths = walker.collect_files(config);
     let scanned_files = paths.len();
 
-    let file_items: Vec<Vec<TodoItem>> = readable_text_files(paths, config.max_file_size)
+    let file_items: Vec<Vec<TodoItem>> = paths
         .into_par_iter()
-        .map(|(path, content)| matcher.scan_text(&path, &content))
+        .filter_map(|path| {
+            let content = read_single_file(&path, config.max_file_size).ok()??;
+            Some(matcher.scan_text(&path, &content))
+        })
         .filter(|items| !items.is_empty())
         .collect();
 

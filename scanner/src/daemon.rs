@@ -1,15 +1,16 @@
 use crate::config::ScannerConfig;
 use crate::matcher::TodoMatcher;
 use crate::output::{AgentContext, AgentSummary, AgentTodoItem, ScanOutput, TodoItem};
-use crate::walker::{read_single_file, readable_text_files, FileWalker};
+use crate::walker::{read_single_file, FileWalker};
 use anyhow::{anyhow, Context, Result};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::fs;
 use std::io::{self, BufRead};
 use std::path::{Path, PathBuf};
-use std::time::Instant;
+use std::time::{Instant, UNIX_EPOCH};
 
 #[derive(Debug, Deserialize)]
 struct RequestMessage {
@@ -45,8 +46,15 @@ struct DaemonState {
     walker: FileWalker,
     // Maps clean absolute path to TodoItems
     cache: HashMap<String, Vec<TodoItem>>,
+    file_signatures: HashMap<String, FileSignature>,
     // Set of scanned files
     scanned_files: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct FileSignature {
+    len: u64,
+    modified_ns: Option<u128>,
 }
 
 pub fn run_daemon() -> Result<()> {
@@ -108,6 +116,7 @@ fn handle_request(method: &str, params: Value, state: &mut Option<DaemonState>) 
                 matcher,
                 walker,
                 cache: HashMap::new(),
+                file_signatures: HashMap::new(),
                 scanned_files: Vec::new(),
             };
             rebuild_cache(&mut next_state)?;
@@ -158,15 +167,20 @@ fn handle_request(method: &str, params: Value, state: &mut Option<DaemonState>) 
                     Some(content) => {
                         let new_items = s.matcher.scan_text(&file_canon, &content);
                         s.cache.insert(clean_key.clone(), new_items.clone());
+                        if let Some(signature) = file_signature(&file_canon) {
+                            s.file_signatures.insert(clean_key.clone(), signature);
+                        }
                         new_items
                     }
                     None => {
                         s.cache.remove(&clean_key);
+                        s.file_signatures.remove(&clean_key);
                         Vec::new()
                     }
                 }
             } else {
                 s.cache.remove(&clean_key);
+                s.file_signatures.remove(&clean_key);
                 forget_scanned_file(&mut s.scanned_files, &clean_key);
                 Vec::new()
             };
@@ -291,21 +305,49 @@ fn rebuild_cache(state: &mut DaemonState) -> Result<()> {
     let paths = state.walker.collect_files(&state.config);
     state.scanned_files = paths.iter().map(|p| clean_path(p)).collect();
 
-    let file_items: Vec<(String, Vec<TodoItem>)> = readable_text_files(paths, state.config.max_file_size)
+    let previous_cache = &state.cache;
+    let previous_signatures = &state.file_signatures;
+    let matcher = &state.matcher;
+    let max_file_size = state.config.max_file_size;
+
+    let file_items: Vec<(String, FileSignature, Vec<TodoItem>)> = paths
         .into_par_iter()
-        .map(|(path, content)| {
+        .filter_map(|path| {
             let key = clean_path(&path);
-            let items = state.matcher.scan_text(&path, &content);
-            (key, items)
+            let signature = file_signature(&path)?;
+
+            if previous_signatures.get(&key) == Some(&signature) {
+                let items = previous_cache.get(&key).cloned().unwrap_or_default();
+                return Some((key, signature, items));
+            }
+
+            let content = read_single_file(&path, max_file_size).ok()??;
+            let items = matcher.scan_text(&path, &content);
+            Some((key, signature, items))
         })
         .collect();
 
     state.cache.clear();
-    for (key, items) in file_items {
+    state.file_signatures.clear();
+    for (key, signature, items) in file_items {
+        state.file_signatures.insert(key.clone(), signature);
         state.cache.insert(key, items);
     }
 
     Ok(())
+}
+
+fn file_signature(path: &Path) -> Option<FileSignature> {
+    let metadata = fs::metadata(path).ok()?;
+    let modified_ns = metadata
+        .modified()
+        .ok()
+        .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_nanos());
+    Some(FileSignature {
+        len: metadata.len(),
+        modified_ns,
+    })
 }
 
 fn resolve_file_under_root(root: &Path, file: &Path) -> Result<PathBuf> {

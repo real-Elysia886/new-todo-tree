@@ -49,12 +49,27 @@ function findTodoTag(text: string, tags: string[]): string | undefined {
 
 export function parseDiffForTodos(diff: string, tags: string[]): DebtItem[] {
     const items: DebtItem[] = [];
+    let oldFile = '';
     let currentFile = '';
     let lineNumber = 0;
 
     for (const rawLine of diff.split('\n')) {
+        if (rawLine.startsWith('diff --git ')) {
+            oldFile = '';
+            currentFile = '';
+            lineNumber = 0;
+            continue;
+        }
+        if (rawLine.startsWith('--- a/')) {
+            oldFile = rawLine.substring(6);
+            continue;
+        }
         if (rawLine.startsWith('+++ b/')) {
             currentFile = rawLine.substring(6);
+            continue;
+        }
+        if (rawLine === '+++ /dev/null') {
+            currentFile = oldFile;
             continue;
         }
         const hunkMatch = rawLine.match(/^@@ -\d+(?:,\d+)? \+(\d+)/);
