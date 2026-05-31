@@ -87,3 +87,14 @@ QUnit.test('uses built-in search excludes when flag is set', function (assert) {
     const result = buildGlobsForRipgrep([], [], [], [], [], false, true, false);
     assert.ok(result.includes('!node_modules'));
 });
+
+QUnit.test('handles empty include and exclude', function (assert) {
+    const result = buildGlobsForRipgrep([], [], [], [], [], false, false, false);
+    assert.deepEqual(result, []);
+});
+
+QUnit.test('handles duplicate globs', function (assert) {
+    const result = addGlobs({ '*.js': true, '*.ts': true }, ['*.js'], false);
+    assert.ok(result.includes('*.js'));
+    assert.ok(result.includes('*.ts'));
+});
