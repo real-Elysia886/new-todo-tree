@@ -121,6 +121,5 @@
     "todo-tree.command.groupBySubTag.title": "按子标签分组",
     "todo-tree.command.ungroupBySubTag.title": "取消按子标签分组",
     "todo-tree.command.goToNext.title": "跳转到下一个待办事项",
-    "todo-tree.command.goToPrevious.title": "跳转到上一个待办事项",
-    "todo-tree.command.revealInFile.title": "在文件中显示"
+    "todo-tree.command.goToPrevious.title": "跳转到上一个待办事项"
 }
