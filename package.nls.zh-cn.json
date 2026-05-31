@@ -117,5 +117,9 @@
     "todo-tree.configuration.tree.buttons.filter.markdownDescription": "在侧边栏顶部显示一个待办事项过滤器的按钮。",
     "todo-tree.configuration.tree.buttons.refresh.markdownDescription": "在侧边栏顶部显示一个刷新待办事项的按钮。",
     "todo-tree.configuration.tree.buttons.expand.markdownDescription": "在侧边栏顶部显示一个展开或折叠树状图的按钮。",
-    "todo-tree.configuration.tree.buttons.export.markdownDescription": "在侧边栏顶部显示一个导出树状图的按钮。"
+    "todo-tree.configuration.tree.buttons.export.markdownDescription": "在侧边栏顶部显示一个导出树状图的按钮。",
+    "todo-tree.command.groupBySubTag.title": "按子标签分组",
+    "todo-tree.command.ungroupBySubTag.title": "取消按子标签分组",
+    "todo-tree.command.goToNext.title": "跳转到下一个待办事项",
+    "todo-tree.command.goToPrevious.title": "跳转到上一个待办事项"
 }
