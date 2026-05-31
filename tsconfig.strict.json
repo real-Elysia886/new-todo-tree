@@ -22,7 +22,6 @@
     "src/statusBar.ts",
     "src/storagePath.ts",
     "src/types.ts",
-    "src/globUtils.ts",
     "src/declarations.d.ts"
   ]
 }
